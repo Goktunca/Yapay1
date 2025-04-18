@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Basic Tank Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #222;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            color: white;
+        }
+        
+        #game-container {
+            position: relative;
+            width: 800px;
+            height: 500px;
+            background-color: #333;
+            border: 4px solid #555;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-top: 20px;
+        }
+        
+        #tank {
+            position: absolute;
+            width: 60px;
+            height: 40px;
+            background-color: #4CAF50;
+            border-radius: 10px;
+            bottom: 20px;
+            left: 50px;
+            transition: left 0.1s;
+        }
+        
+        #tank::before {
+            content: '';
+            position: absolute;
+            width: 30px;
+            height: 10px;
+            background-color: #388E3C;
+            top: -10px;
+            left: 15px;
+            border-radius: 5px 5px 0 0;
+        }
+        
+        #tank-barrel {
+            position: absolute;
+            width: 30px;
+            height: 8px;
+            background-color: #2E7D32;
+            top: -8px;
+            left: 15px;
+            transform-origin: left center;
+            transform: rotate(-45deg);
+        }
+        
+        .bullet {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: #FFC107;
+            border-radius: 50%;
+        }
+        
+        .target {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background-color: #F44336;
+            border-radius: 50%;
+            top: 20px;
+        }
+        
+        #score-display {
+            margin-top: 20px;
+            font-size: 24px;
+            color: #FFC107;
+        }
+        
+        #controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover {
+            background-color: #388E3C;
+        }
+        
+        #game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+        
+        #restart-btn {
+            margin-top: 15px;
+            background-color: #2196F3;
+        }
+        
+        #restart-btn:hover {
+            background-color: #1976D2;
+        }
+    </style>
+</head>
+<body>
+    <h1>Tank Game</h1>
+    <div id="score-display">Score: 0</div>
+    <div id="game-container">
+        <div id="tank">
+            <div id="tank-barrel"></div>
+        </div>
+        <div id="game-over">
+            <h2>Game Over!</h2>
+            <p id="final-score">Your score: 0</p>
+            <button id="restart-btn">Play Again</button>
+        </div>
+    </div>
+    <div id="controls">
+        <button id="left-btn">← Move Left</button>
+        <button id="right-btn">→ Move Right</button>
+        <button id="shoot-btn">Shoot (Space)</button>
+    </div>
+
+    <script>
+        // Game elements
+        const gameContainer = document.getElementById('game-container');
+        const tank = document.getElementById('tank');
+        const tankBarrel = document.getElementById('tank-barrel');
+        const scoreDisplay = document.getElementById('score-display');
+        const gameOverScreen = document.getElementById('game-over');
+        const finalScoreDisplay = document.getElementById('final-score');
+        const restartBtn = document.getElementById('restart-btn');
+        
+        // Control buttons
+        const leftBtn = document.getElementById('left-btn');
+        const rightBtn = document.getElementById('right-btn');
+        const shootBtn = document.getElementById('shoot-btn');
+        
+        // Game variables
+        let tankPosition = 50;
+        let tankWidth = 60;
+        let gameWidth = gameContainer.offsetWidth;
+        let gameHeight = gameContainer.offsetHeight;
+        let bullets = [];
+        let targets = [];
+        let score = 0;
+        let gameActive = true;
+        let targetSpeed = 2;
+        let targetSpawnRate = 1500; // milliseconds
+        let lastTargetSpawn = 0;
+        let barrelAngle = -45;
+        
+        // Initialize game
+        function initGame() {
+            // Reset variables
+            bullets = [];
+            targets = [];
+            score = 0;
+            gameActive = true;
+            tankPosition = 50;
+            updateScore();
+            gameOverScreen.style.display = 'none';
+            
+            // Clear any existing bullets and targets
+            document.querySelectorAll('.bullet, .target').forEach(el => el.remove());
+            
+            // Position tank
+            tank.style.left = tankPosition + 'px';
+            
+            // Start game loop
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Game loop
+        function gameLoop(timestamp) {
+            if (!gameActive) return;
+            
+            // Spawn new targets
+            if (timestamp - lastTargetSpawn > targetSpawnRate) {
+                spawnTarget();
+                lastTargetSpawn = timestamp;
+                
+                // Increase difficulty
+                if (score > 0 && score % 5 === 0) {
+                    targetSpeed += 0.2;
+                    if (targetSpawnRate > 800) {
+                        targetSpawnRate -= 100;
+                    }
+                }
+            }
+            
+            // Move bullets
+            moveBullets();
+            
+            // Move targets
+            moveTargets();
+            
+            // Check collisions
+            checkCollisions();
+            
+            // Continue game loop
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Move tank
+        function moveTank(direction) {
+            if (!gameActive) return;
+            
+            const moveAmount = 10;
+            
+            if (direction === 'left' && tankPosition > 0) {
+                tankPosition -= moveAmount;
+            } else if (direction === 'right' && tankPosition < gameWidth - tankWidth) {
+                tankPosition += moveAmount;
+            }
+            
+            tank.style.left = tankPosition + 'px';
+        }
+        
+        // Rotate barrel
+        function rotateBarrel(angle) {
+            barrelAngle = angle;
+            tankBarrel.style.transform = `rotate(${angle}deg)`;
+        }
+        
+        // Shoot bullet
+        function shoot() {
+            if (!gameActive) return;
+            
+            const bullet = document.createElement('div');
+            bullet.className = 'bullet';
+            
+            // Calculate bullet starting position based on barrel angle
+            const angleRad = barrelAngle * Math.PI / 180;
+            const bulletX = tankPosition + 15 + Math.cos(angleRad) * 30;
+            const bulletY = gameHeight - 60 + Math.sin(angleRad) * 30;
+            
+            bullet.style.left = bulletX + 'px';
+            bullet.style.top = bulletY + 'px';
+            
+            gameContainer.appendChild(bullet);
+            
+            bullets.push({
+                element: bullet,
+                x: bulletX,
+                y: bulletY,
+                speedX: Math.cos(angleRad) * 10,
+                speedY: Math.sin(angleRad) * 10
+            });
+        }
+        
+        // Move bullets
+        function moveBullets() {
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const bullet = bullets[i];
+                bullet.x += bullet.speedX;
+                bullet.y += bullet.speedY;
+                
+                bullet.element.style.left = bullet.x + 'px';
+                bullet.element.style.top = bullet.y + 'px';
+                
+                // Remove bullets that go off screen
+                if (bullet.x < 0 || bullet.x > gameWidth || bullet.y < 0 || bullet.y > gameHeight) {
+                    bullet.element.remove();
+                    bullets.splice(i, 1);
+                }
+            }
+        }
+        
+        // Spawn target
+        function spawnTarget() {
+            const target = document.createElement('div');
+            target.className = 'target';
+            
+            const x = Math.random() * (gameWidth - 40);
+            
+            target.style.left = x + 'px';
+            gameContainer.appendChild(target);
+            
+            targets.push({
+                element: target,
+                x: x,
+                y: 20,
+                speed: targetSpeed
+            });
+        }
+        
+        // Move targets
+        function moveTargets() {
+            for (let i = targets.length - 1; i >= 0; i--) {
+                const target = targets[i];
+                target.y += target.speed;
+                
+                target.element.style.top = target.y + 'px';
+                
+                // Check if target reached bottom (game over)
+                if (target.y > gameHeight - 60) {
+                    gameOver();
+                    return;
+                }
+            }
+        }
+        
+        // Check collisions between bullets and targets
+        function checkCollisions() {
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const bullet = bullets[i];
+                
+                for (let j = targets.length - 1; j >= 0; j--) {
+                    const target = targets[j];
+                    
+                    // Simple collision detection
+                    if (
+                        bullet.x + 5 > target.x &&
+                        bullet.x - 5 < target.x + 40 &&
+                        bullet.y + 5 > target.y &&
+                        bullet.y - 5 < target.y + 40
+                    ) {
+                        // Remove bullet and target
+                        bullet.element.remove();
+                        bullets.splice(i, 1);
+                        
+                        target.element.remove();
+                        targets.splice(j, 1);
+                        
+                        // Increase score
+                        score++;
+                        updateScore();
+                        
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Update score display
+        function updateScore() {
+            scoreDisplay.textContent = `Score: ${score}`;
+        }
+        
+        // Game over
+        function gameOver() {
+            gameActive = false;
+            finalScoreDisplay.textContent = `Your score: ${score}`;
+            gameOverScreen.style.display = 'block';
+        }
+        
+        // Event listeners
+        leftBtn.addEventListener('mousedown', () => moveTank('left'));
+        rightBtn.addEventListener('mousedown', () => moveTank('right'));
+        shootBtn.addEventListener('click', shoot);
+        
+        // Keyboard controls
+        document.addEventListener('keydown', (e) => {
+            if (!gameActive) return;
+            
+            switch (e.key) {
+                case 'ArrowLeft':
+                    moveTank('left');
+                    rotateBarrel(-45);
+                    break;
+                case 'ArrowRight':
+                    moveTank('right');
+                    rotateBarrel(-45);
+                    break;
+                case 'ArrowUp':
+                    rotateBarrel(-90);
+                    break;
+                case 'ArrowDown':
+                    rotateBarrel(-30);
+                    break;
+                case ' ':
+                    shoot();
+                    break;
+            }
+        });
+        
+        // Restart game
+        restartBtn.addEventListener('click', initGame);
+        
+        // Start game
+        initGame();
+    </script>
+</body>
+</html>
